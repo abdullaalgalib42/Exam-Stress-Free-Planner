@@ -91,4 +91,69 @@ public:
         }
     }
 };
+class DirectedGraph {
+private:
+    static const int MAXV = 50;
+    int V;
+    int adj[MAXV][MAXV];
+    string topics[MAXV];
+
+    void dfs(int v, bool visited[], int stack[], int& stackTop) const {
+        visited[v] = true;
+        for (int i = 0; i < V; i++) {
+            if (adj[v][i] == 1 && !visited[i]) dfs(i, visited, stack, stackTop);
+        }
+        stack[++stackTop] = v;             
+    }
+
+public:
+    explicit DirectedGraph(int vertices) : V(vertices) {
+        for (int i = 0; i < MAXV; i++)
+            for (int j = 0; j < MAXV; j++) adj[i][j] = 0;
+    }
+
+    void setTopicName(int index, const string& name) {
+        if (index >= 0 && index < V) topics[index] = name;
+    }
+    const string& topicName(int i) const { return topics[i]; }
+
+
+    void addEdge(int u, int v) {
+        if (u >= 0 && u < V && v >= 0 && v < V) adj[u][v] = 1;
+    }
+
+
+    bool hasPath(int from, int to) const {
+        if (from < 0 || from >= V || to < 0 || to >= V) return false;
+        bool visited[MAXV] = {false};
+        int stack[MAXV];
+        int top = -1;
+        stack[++top] = from;
+        visited[from] = true;
+        while (top >= 0) {
+            int v = stack[top--];
+            if (v == to) return true;
+            for (int i = 0; i < V; i++) {
+                if (adj[v][i] == 1 && !visited[i]) {
+                    visited[i] = true;
+                    stack[++top] = i;
+                }
+            }
+        }
+        return false;
+    }
+
+  
+    int studySequence(int order[]) const {
+        bool visited[MAXV] = {false};
+        int stack[MAXV];
+        int top = -1;
+        for (int i = 0; i < V; i++) {
+            if (!visited[i] && !topics[i].empty()) dfs(i, visited, stack, top);
+        }
+        int n = 0;
+        while (top >= 0) order[n++] = stack[top--];
+        return n;
+    }
+};
 
