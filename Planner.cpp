@@ -294,3 +294,30 @@ public:
         return ts;
     }
 };
+
+
+
+
+
+class Task {
+private:
+    string name_;
+    string course_;
+    int daysLeft_;
+    TopicSet topics_;
+
+public:
+    Task() : daysLeft_(0) {}
+    Task(const string& name, const string& course, int daysLeft)
+        : name_(name), course_(course), daysLeft_(daysLeft) {}
+
+    const string& name() const { return name_; }
+    const string& course() const { return course_; }
+    int daysLeft() const { return daysLeft_; }
+    const TopicSet& topics() const { return topics_; }
+    void setTopics(const TopicSet& t) { topics_ = t; }
+
+    bool sameAs(const Task& o) const {
+        return name_ == o.name_ && course_ == o.course_ && daysLeft_ == o.daysLeft_;
+    }
+};
