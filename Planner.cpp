@@ -63,4 +63,32 @@ public:
 private:
     static bool isSpace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 };
+class Console {
+public:
+    static string readLine(const string& prompt) {
+        cout << prompt;
+        string s;
+        if (!getline(cin, s)) {           
+            cout << "\nGoodbye!\n";
+            exit(0);                      
+        }
+        return TextUtil::trim(s);
+    }
+
+    static int readInt(const string& prompt, int lo, int hi) {
+        while (true) {
+            int v;
+            if (TextUtil::toInt(readLine(prompt), v) && v >= lo && v <= hi) return v;
+            cout << "  Please enter a number between " << lo << " and " << hi << ".\n";
+        }
+    }
+
+    static bool askYes(const string& prompt) {
+        while (true) {
+            string s = readLine(prompt + " (y/n): ");
+            if (s == "y" || s == "Y" || s == "yes") return true;
+            if (s == "n" || s == "N" || s == "no") return false;
+        }
+    }
+};
 
