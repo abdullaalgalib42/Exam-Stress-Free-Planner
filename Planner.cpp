@@ -156,4 +156,141 @@ public:
         return n;
     }
 };
+class TopicSet {
+public:
+    enum AddResult { ADD_OK, ADD_EMPTY, ADD_FULL, ADD_DUPLICATE };
+    enum LinkResult { LINK_OK, LINK_SAME, LINK_EXISTS, LINK_LOOP };
 
+private:
+    string names[MAX_TOPICS];
+    bool before[MAX_TOPICS][MAX_TOPICS];
+    int n;
+
+    void toGraph(DirectedGraph& g) const {
+        for (int i = 0; i < n; i++) g.setTopicName(i, names[i]);
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (before[i][j]) g.addEdge(j, i);
+    }
+
+public:
+    TopicSet() : n(0) {
+        for (int i = 0; i < MAX_TOPICS; i++)
+            for (int j = 0; j < MAX_TOPICS; j++) before[i][j] = false;
+    }
+
+    int size() const { return n; }
+    bool isEmpty() const { return n == 0; }
+    const string& name(int i) const { return names[i]; }
+    bool needs(int i, int j) const { return before[i][j]; }
+
+    AddResult addTopic(const string& rawName) {
+        string nm = TextUtil::cleanName(rawName);
+        if (nm.empty()) return ADD_EMPTY;
+        if (n >= MAX_TOPICS) return ADD_FULL;
+        for (int i = 0; i < n; i++)
+            if (names[i] == nm) return ADD_DUPLICATE;
+        names[n++] = nm;
+        return ADD_OK;
+    }
+
+    LinkResult addPrerequisite(int a, int b) {
+        if (a == b) return LINK_SAME;
+        if (before[a][b]) return LINK_EXISTS;
+        DirectedGraph g(n);
+        toGraph(g);
+        if (g.hasPath(a, b)) return LINK_LOOP;
+        before[a][b] = true;
+        return LINK_OK;
+    }
+
+    bool removePrerequisite(int a, int b) {
+        if (!before[a][b]) return false;
+        before[a][b] = false;
+        return true;
+    }
+
+    void removeTopic(int k) {
+        bool old[MAX_TOPICS][MAX_TOPICS];
+        for (int i = 0; i < MAX_TOPICS; i++)
+            for (int j = 0; j < MAX_TOPICS; j++) old[i][j] = before[i][j];
+
+        int m = n - 1;
+        for (int i = 0; i < m; i++) {
+            int oi = (i < k) ? i : i + 1;
+            names[i] = names[oi];
+            for (int j = 0; j < m; j++) {
+                int oj = (j < k) ? j : j + 1;
+                before[i][j] = old[oi][oj];
+            }
+        }
+        names[m] = "";
+        for (int i = 0; i < MAX_TOPICS; i++) {
+            before[m][i] = false;
+            before[i][m] = false;
+        }
+        n = m;
+    }
+
+  
+    int studyOrder(int order[]) const {
+        DirectedGraph g(n);
+        toGraph(g);
+        return g.studySequence(order);
+    }
+
+ 
+    string serialize() const {
+        string out;
+        for (int i = 0; i < n; i++) {
+            if (i > 0) out += '|';
+            out += names[i];
+            out += '~';
+            bool first = true;
+            for (int j = 0; j < n; j++) {
+                if (before[i][j]) {
+                    if (!first) out += ',';
+                    out += to_string(j);
+                    first = false;
+                }
+            }
+        }
+        return out;
+    }
+
+    static TopicSet parse(const string& s) {
+        TopicSet ts;
+        if (s.empty()) return ts;
+
+   
+        string prereqText[MAX_TOPICS];
+        size_t pos = 0;
+        while (pos <= s.size() && ts.n < MAX_TOPICS) {
+            size_t bar = s.find('|', pos);
+            string part = s.substr(pos, bar == string::npos ? string::npos : bar - pos);
+            if (!part.empty()) {
+                size_t tilde = part.find('~');
+                string nm = (tilde == string::npos) ? part : part.substr(0, tilde);
+                ts.names[ts.n] = nm.empty() ? "(topic)" : nm;
+                if (tilde != string::npos) prereqText[ts.n] = part.substr(tilde + 1);
+                ts.n++;
+            }
+            if (bar == string::npos) break;
+            pos = bar + 1;
+        }
+
+        for (int i = 0; i < ts.n; i++) {
+            const string& t = prereqText[i];
+            size_t p = 0;
+            while (p <= t.size()) {
+                size_t comma = t.find(',', p);
+                string num = t.substr(p, comma == string::npos ? string::npos : comma - p);
+                int v;
+                if (TextUtil::toInt(num, v) && v >= 0 && v < ts.n && v != i) ts.before[i][v] = true;
+                if (comma == string::npos) break;
+                p = comma + 1;
+            }
+        }
+        return ts;
+    }
+};
