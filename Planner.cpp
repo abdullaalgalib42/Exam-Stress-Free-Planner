@@ -321,3 +321,107 @@ public:
         return name_ == o.name_ && course_ == o.course_ && daysLeft_ == o.daysLeft_;
     }
 };
+class MinHeap {
+private:
+    Task* arr;
+    int capacity;
+    int count;
+
+    void swapTasks(Task& a, Task& b) {
+        Task t = a;
+        a = b;
+        b = t;
+    }
+
+    void heapifyUp(int i) {
+        while (i > 0 && arr[(i - 1) / 2].daysLeft() > arr[i].daysLeft()) {
+            swapTasks(arr[i], arr[(i - 1) / 2]);
+            i = (i - 1) / 2;
+        }
+    }
+
+    void heapifyDown(int i) {
+        int smallest = i;
+        int l = 2 * i + 1;
+        int r = 2 * i + 2;
+        if (l < count && arr[l].daysLeft() < arr[smallest].daysLeft()) smallest = l;
+        if (r < count && arr[r].daysLeft() < arr[smallest].daysLeft()) smallest = r;
+        if (smallest != i) {
+            swapTasks(arr[i], arr[smallest]);
+            heapifyDown(smallest);
+        }
+    }
+
+public:
+    explicit MinHeap(int cap) : arr(new Task[cap]), capacity(cap), count(0) {}
+    ~MinHeap() { delete[] arr; }
+
+    MinHeap(const MinHeap& o) : arr(new Task[o.capacity]), capacity(o.capacity), count(o.count) {
+        for (int i = 0; i < count; i++) arr[i] = o.arr[i];
+    }
+    MinHeap& operator=(const MinHeap& o) {
+        if (this != &o) {
+            delete[] arr;
+            arr = new Task[o.capacity];
+            capacity = o.capacity;
+            count = o.count;
+            for (int i = 0; i < count; i++) arr[i] = o.arr[i];
+        }
+        return *this;
+    }
+
+    bool isEmpty() const { return count == 0; }
+    bool isFull() const { return count == capacity; }
+    int size() const { return count; }
+
+    bool peek(Task& out) const {
+        if (isEmpty()) return false;
+        out = arr[0];
+        return true;
+    }
+
+    bool insert(const Task& t) {                      
+        if (isFull()) return false;
+        arr[count] = t;
+        count++;
+        heapifyUp(count - 1);
+        return true;
+    }
+
+    bool extractMin(Task& out) {                    
+        if (isEmpty()) return false;
+        out = arr[0];
+        arr[0] = arr[count - 1];
+        count--;
+        heapifyDown(0);
+        return true;
+    }
+
+    int indexOf(const Task& t) const {              
+        for (int i = 0; i < count; i++)
+            if (arr[i].sameAs(t)) return i;
+        return -1;
+    }
+
+    bool removeAt(int i) {                            
+        if (i < 0 || i >= count) return false;
+        arr[i] = arr[count - 1];
+        count--;
+        if (i < count) {
+            heapifyDown(i);
+            heapifyUp(i);
+        }
+        return true;
+    }
+
+    bool remove(const Task& t) { return removeAt(indexOf(t)); }
+
+    bool updateTopics(const Task& t, const TopicSet& topics) {
+        int i = indexOf(t);
+        if (i < 0) return false;
+        arr[i].setTopics(topics);
+        return true;
+    }
+
+    const Task& at(int i) const { return arr[i]; }
+};
