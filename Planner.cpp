@@ -602,3 +602,260 @@ public:
 
     void sortedDeadlines(TaskList& out) const { out.fillFrom(heap); }
 };
+class ConsoleUI {
+private:
+    Planner planner;
+
+    void warnIfNotSaved() const {
+        if (!planner.lastSaveSucceeded()) cout << "  WARNING: could not save data to disk!\n";
+    }
+
+    void printMenu() const {
+        cout << "\n========================================\n"
+             << "     EXAM STRESS-FREE PLANNER           \n"
+             << "========================================\n"
+             << "1. Add new deadline\n"
+             << "2. View all deadlines\n"
+             << "3. Complete nearest deadline\n"
+             << "4. Remove a deadline\n"
+             << "5. Edit study topics of a deadline\n"
+             << "6. View recommended study order\n"
+             << "7. Undo last action\n"
+             << "8. Exit\n";
+    }
+
+    void printTopics(const TopicSet& ts) const {
+        if (ts.isEmpty()) {
+            cout << "  (no topics yet)\n";
+            return;
+        }
+        for (int i = 0; i < ts.size(); i++) {
+            cout << "  " << i + 1 << ". " << ts.name(i);
+            bool first = true;
+            for (int j = 0; j < ts.size(); j++) {
+                if (ts.needs(i, j)) {
+                    cout << (first ? "    needs: " : ", ") << ts.name(j);
+                    first = false;
+                }
+            }
+            cout << "\n";
+        }
+    }
+
+    void printList(const TaskList& list) const {
+        cout << "  #  " << TextUtil::fit("Task", 28) << TextUtil::fit("Course", 12)
+             << TextUtil::fit("Days left", 11) << "Topics\n";
+        for (int i = 0; i < list.size(); i++) {
+            string num = to_string(i + 1);
+            while (num.size() < 3) num += ' ';
+            cout << "  " << num << TextUtil::fit(list[i].name(), 28) << TextUtil::fit(list[i].course(), 12)
+                 << TextUtil::fit(to_string(list[i].daysLeft()), 11) << list[i].topics().size() << "\n";
+        }
+    }
+    bool pickDeadline(TaskList& list, const string& prompt, Task& chosen) const {
+        planner.sortedDeadlines(list);
+        if (list.size() == 0) {
+            cout << "No deadlines yet.\n";
+            return false;
+        }
+        cout << "\n";
+        printList(list);
+        int k = Console::readInt(prompt + " (0 = cancel): ", 0, list.size());
+        if (k == 0) return false;
+        chosen = list[k - 1];
+        return true;
+    }
+    void topicEditor(TopicSet& ts, const string& title) const {
+        while (true) {
+            cout << "\n--- Study topics: " << title << " ---\n";
+            printTopics(ts);
+            cout << "\n  1. Add a topic\n"
+                 << "  2. Set a prerequisite (topic B must be studied BEFORE topic A)\n"
+                 << "  3. Remove a prerequisite\n"
+                 << "  4. Remove a topic\n"
+                 << "  5. Done\n";
+            int c = Console::readInt("  Choice: ", 1, 5);
+
+            if (c == 1) {
+                TopicSet::AddResult r = ts.addTopic(Console::readLine("  Topic name: "));
+                if (r == TopicSet::ADD_OK) cout << "  Added.\n";
+                else if (r == TopicSet::ADD_FULL) cout << "  You can add at most " << MAX_TOPICS << " topics.\n";
+                else if (r == TopicSet::ADD_DUPLICATE) cout << "  This topic is already in the list.\n";
+            } else if (c == 2 || c == 3) {
+                if (ts.size() < 2) {
+                    cout << "  Add at least two topics first.\n";
+                    continue;
+                }
+                int a = Console::readInt("  Topic A (number): ", 1, ts.size()) - 1;
+                int b = Console::readInt("  Topic B that must come BEFORE A (number): ", 1, ts.size()) - 1;
+                if (c == 2) {
+                    TopicSet::LinkResult r = ts.addPrerequisite(a, b);
+                    if (r == TopicSet::LINK_OK)
+                        cout << "  Set: \"" << ts.name(b) << "\" is studied before \"" << ts.name(a) << "\".\n";
+                    else if (r == TopicSet::LINK_SAME)
+                        cout << "  A topic cannot be its own prerequisite.\n";
+                    else if (r == TopicSet::LINK_EXISTS)
+                        cout << "  Already set.\n";
+                    else
+                        cout << "  Not allowed: \"" << ts.name(b) << "\" already comes after \"" << ts.name(a)
+                             << "\", this would make a loop.\n";
+                } else {
+                    cout << (ts.removePrerequisite(a, b) ? "  Removed.\n" : "  That prerequisite is not set.\n");
+                }
+            } else if (c == 4) {
+                if (ts.isEmpty()) {
+                    cout << "  No topics to remove.\n";
+                    continue;
+                }
+                int k = Console::readInt("  Topic number to remove: ", 1, ts.size()) - 1;
+                cout << "  Removed \"" << ts.name(k) << "\".\n";
+                ts.removeTopic(k);
+            } else {
+                return;
+            }
+        }
+    }
+    void actionAdd() {
+        string name = TextUtil::cleanName(Console::readLine("Task / Exam name: "));
+        if (name.empty()) {
+            cout << "Name cannot be empty.\n";
+            return;
+        }
+        string course = TextUtil::cleanName(Console::readLine("Course code: "));
+        if (course.empty()) {
+            cout << "Course code cannot be empty.\n";
+            return;
+        }
+        int days = Console::readInt("Days left (0-365): ", 0, 365);
+        if (planner.isFull()) {
+            cout << "Error: Heap Overflow! Cannot add more than " << MAX_TASKS << " deadlines.\n";
+            return;
+        }
+        Task t(name, course, days);
+        if (Console::askYes("Add study topics for this deadline now?")) {
+            TopicSet ts;
+            topicEditor(ts, name);
+            t.setTopics(ts);
+        }
+        planner.addDeadline(t);
+        cout << "Success: deadline added.\n";
+        warnIfNotSaved();
+        if (!planner.lastUndoRecorded()) cout << "  (Undo history is full, this action cannot be undone.)\n";
+    }
+
+    void actionView() const {
+        TaskList list;
+        planner.sortedDeadlines(list);
+        if (list.size() == 0) {
+            cout << "\nNo upcoming deadlines.\n";
+            return;
+        }
+        cout << "\n--- Current Deadlines (nearest first, sorted by the Min-Heap) ---\n";
+        printList(list);
+        cout << "Nearest deadline: " << list[0].name() << " (" << list[0].daysLeft() << " days)\n";
+    }
+
+    void actionComplete() {
+        Task done;
+        if (!planner.completeNearest(done)) {
+            cout << "Error: Heap Underflow! No deadlines available.\n";
+            return;
+        }
+        cout << "\n[Nearest deadline completed]\n"
+             << "Task: " << done.name() << " | Course: " << done.course()
+             << " | Days Left: " << done.daysLeft() << "\n";
+        warnIfNotSaved();
+    }
+
+    void actionRemove() {
+        TaskList list;
+        Task chosen;
+        if (!pickDeadline(list, "Number to remove", chosen)) return;
+        planner.removeDeadline(chosen);
+        cout << "Removed: " << chosen.name() << "\n";
+        warnIfNotSaved();
+    }
+
+    void actionEditTopics() {
+        TaskList list;
+        Task chosen;
+        if (!pickDeadline(list, "Deadline number to edit topics", chosen)) return;
+        TopicSet ts = chosen.topics();
+        topicEditor(ts, chosen.name());
+        planner.updateTopics(chosen, ts);
+        cout << "Topics saved.\n";
+        warnIfNotSaved();
+    }
+
+    void actionStudyOrder() const {
+        TaskList list;
+        planner.sortedDeadlines(list);
+        if (list.size() == 0) {
+            cout << "\nNo deadlines yet. Add one first.\n";
+            return;
+        }
+        int idx = 0;                                  
+        string s = Console::readLine("Press Enter for the nearest deadline, or type a deadline number: ");
+        if (!s.empty()) {
+            int v;
+            if (!TextUtil::toInt(s, v) || v < 1 || v > list.size()) {
+                cout << "Invalid number.\n";
+                return;
+            }
+            idx = v - 1;
+        }
+        const Task& t = list[idx];
+        cout << "\n--- Recommended Study Sequence for \"" << t.name() << "\" (" << t.daysLeft()
+             << " days left) ---\n";
+        if (t.topics().isEmpty()) {
+            cout << "No topics added for this deadline. Use \"Edit study topics\" from the menu.\n";
+            return;
+        }
+        int order[MAX_TOPICS];
+        int n = t.topics().studyOrder(order);
+        for (int i = 0; i < n; i++) cout << i + 1 << ". " << t.topics().name(order[i]) << "\n";
+    }
+
+    void actionUndo() {
+        Action a;
+        if (!planner.undo(a)) {
+            cout << "Error: Nothing to undo.\n";
+            return;
+        }
+        if (a.type() == ACTION_ADD)
+            cout << "Undone: added deadline \"" << a.task().name() << "\" removed again.\n";
+        else
+            cout << "Undone: deadline \"" << a.task().name() << "\" restored.\n";
+        warnIfNotSaved();
+    }
+
+public:
+    explicit ConsoleUI(const string& dataFile) : planner(dataFile) {}
+
+    void run() {
+        int loaded = planner.loadSaved();
+        if (loaded > 0) cout << "Loaded " << loaded << " saved deadline(s).\n";
+
+        while (true) {
+            printMenu();
+            switch (Console::readInt("Enter your choice: ", 1, 8)) {
+                case 1: actionAdd(); break;
+                case 2: actionView(); break;
+                case 3: actionComplete(); break;
+                case 4: actionRemove(); break;
+                case 5: actionEditTopics(); break;
+                case 6: actionStudyOrder(); break;
+                case 7: actionUndo(); break;
+                case 8:
+                    cout << "Data is saved. Good luck with your exam preparation!\n";
+                    return;
+            }
+        }
+    }
+};
+
+int main() {
+    ConsoleUI app("deadlines.txt");
+    app.run();
+    return 0;
+}
