@@ -425,3 +425,180 @@ public:
 
     const Task& at(int i) const { return arr[i]; }
 };
+
+class TaskList {
+private:
+    Task* items;
+    int n;
+
+    TaskList(const TaskList&);                        
+    TaskList& operator=(const TaskList&);
+
+public:
+    TaskList() : items(nullptr), n(0) {}
+    ~TaskList() { delete[] items; }
+
+    void fillFrom(const MinHeap& heap) {              
+        delete[] items;
+        n = heap.size();
+        items = new Task[n > 0 ? n : 1];
+        MinHeap copy(heap);
+        for (int i = 0; i < n; i++) copy.extractMin(items[i]);
+    }
+
+    int size() const { return n; }
+    const Task& operator[](int i) const { return items[i]; }
+};
+
+enum ActionType { ACTION_ADD, ACTION_COMPLETE, ACTION_REMOVE };
+
+class Action {
+private:
+    ActionType type_;
+    Task task_;
+
+public:
+    Action() : type_(ACTION_ADD) {}
+    Action(ActionType type, const Task& task) : type_(type), task_(task) {}
+    ActionType type() const { return type_; }
+    const Task& task() const { return task_; }
+};
+
+class CustomStack {
+private:
+    Action* arr;
+    int capacity;
+    int topIdx;
+
+    CustomStack(const CustomStack&);                 
+    CustomStack& operator=(const CustomStack&);
+
+public:
+    explicit CustomStack(int cap) : arr(new Action[cap]), capacity(cap), topIdx(-1) {}
+    ~CustomStack() { delete[] arr; }
+
+    bool isEmpty() const { return topIdx == -1; }
+    bool isFull() const { return topIdx == capacity - 1; }
+    int size() const { return topIdx + 1; }
+
+    bool push(const Action& a) {                      
+        if (isFull()) return false;
+        arr[++topIdx] = a;
+        return true;
+    }
+
+    bool pop(Action& out) {                            
+        if (isEmpty()) return false;
+        out = arr[topIdx--];
+        return true;
+    }
+};
+
+class FileStorage {
+private:
+    string path;
+
+public:
+    explicit FileStorage(const string& filePath) : path(filePath) {}
+
+    bool save(const MinHeap& heap) const {
+        ofstream f(path.c_str());
+        if (!f) return false;
+        for (int i = 0; i < heap.size(); i++) {
+            const Task& t = heap.at(i);
+            f << TextUtil::cleanName(t.name()) << '\t' << TextUtil::cleanName(t.course()) << '\t'
+              << t.daysLeft() << '\t' << t.topics().serialize() << '\n';
+        }
+        return (bool)f;
+    }
+
+
+    int load(MinHeap& heap) const {
+        ifstream f(path.c_str());
+        if (!f) return 0;                              
+        string line;
+        int loaded = 0;
+        while (getline(f, line)) {
+            string part[4];                           
+            int n = 0;
+            size_t p = 0;
+            while (n < 4) {
+                size_t tab = line.find('\t', p);
+                if (tab == string::npos || n == 3) {
+                    part[n++] = line.substr(p);
+                    break;
+                }
+                part[n++] = line.substr(p, tab - p);
+                p = tab + 1;
+            }
+            int days;
+            if (n < 3 || !TextUtil::toInt(part[2], days)) continue;
+            Task t(part[0], part[1], days);
+            if (n == 4) t.setTopics(TopicSet::parse(TextUtil::trim(part[3])));
+            if (heap.insert(t)) loaded++;
+        }
+        return loaded;
+    }
+};
+
+class Planner {
+private:
+    MinHeap heap;
+    CustomStack undoStack;
+    FileStorage storage;
+    bool saveOk;
+    bool undoRecorded;
+
+    void persist() { saveOk = storage.save(heap); }
+    void record(ActionType type, const Task& t) { undoRecorded = undoStack.push(Action(type, t)); }
+
+public:
+    explicit Planner(const string& dataFile)
+        : heap(MAX_TASKS), undoStack(UNDO_LIMIT), storage(dataFile), saveOk(true), undoRecorded(true) {}
+
+    int loadSaved() { return storage.load(heap); }
+
+    bool lastSaveSucceeded() const { return saveOk; }
+    bool lastUndoRecorded() const { return undoRecorded; }
+    int pendingCount() const { return heap.size(); }
+    bool hasPending() const { return !heap.isEmpty(); }
+    bool isFull() const { return heap.isFull(); }
+
+    bool addDeadline(const Task& t) {
+        if (!heap.insert(t)) return false;
+        record(ACTION_ADD, t);
+        persist();
+        return true;
+    }
+
+    bool completeNearest(Task& done) {
+        if (!heap.extractMin(done)) return false;
+        record(ACTION_COMPLETE, done);
+        persist();
+        return true;
+    }
+
+    bool removeDeadline(const Task& t) {
+        if (!heap.remove(t)) return false;
+        record(ACTION_REMOVE, t);
+        persist();
+        return true;
+    }
+
+    bool updateTopics(const Task& t, const TopicSet& topics) {
+        if (!heap.updateTopics(t, topics)) return false;
+        persist();
+        return true;
+    }
+
+
+    bool undo(Action& undone) {
+        if (!undoStack.pop(undone)) return false;
+        if (undone.type() == ACTION_ADD) heap.remove(undone.task());   
+        else heap.insert(undone.task());                               
+        persist();
+        return true;
+    }
+
+    void sortedDeadlines(TaskList& out) const { out.fillFrom(heap); }
+};
